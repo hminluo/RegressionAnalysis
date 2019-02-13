@@ -1,0 +1,293 @@
+---
+output:
+  md_document:
+    variant: markdown_github
+---
+
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(collapse=TRUE, comment="##", fig.retina=2)
+```
+
+```{r echo=FALSE,message=FALSE, warning=FALSE, include=FALSE}
+require(corrplot)
+require(car)
+require(caret)
+require(leaps)
+require(MASS)
+require(forecast)
+set.seed(42)
+```
+## Regression Analysis on College Graduation Rate
+
+### Introduction
+For this project, the US News and World Reports College Data from the StatLib library dataset is analyzed. Multiple regression models with the graduation rate as the dependent variable were fitted. Using stepwise selection, variables for the model were selected from the 17 predictor variables in the dataset, such as number of full-time students, and out-of-state tuition. By analysing the relationships between the dependent and independent variables, graduation rate of a university can be predicted based on the model fitted.
+
+### Data Description and Exploratory Analysis
+
+This project uses the college data from the 1995 issue of US News and World Report; the dataset cotains statistics for a large amount of colleges. The dataset can be accessed from the `ISLR` package in R as follows.
+
+```{r}
+college <- ISLR::College
+```
+
+The college dataset has 777 observations and 18 variables, where 1 variable, Private, is categorical with two levels, and the others are numerical. The variables and their descriptions are shown below. In this project, the Grad.Rate variable (graduation rate) is the independent variable.   
+
+* `Private` A factor with levels No and Yes indicating private or public university
+* `Apps` Number of applications received
+* `Accept` Number of applications accepted
+* `Enroll` Number of new students enrolled
+* `Top10perc` Pct. new students from top 10% of H.S. class
+* `Top25perc` Pct. new students from top 25% of H.S. class
+* `F.Undergrad` Number of fulltime undergraduates
+* `P.Undergrad` Number of parttime undergraduates
+* `Outstate` Out-of-state tuition
+* `Room.Board` Room and board costs
+* `Books` Estimated book costs
+* `Personal` Estimated personal spending
+* `PhD` Pct. of faculty with Ph.Ds
+* `Terminal Pct.` of faculty with terminal degree
+* `S.F.Ratio` Student/faculty ratio
+* `perc.alumni` Pct. alumni who donate
+* `Expend` Instructional expenditure per student
+* `Grad.Rate`(IV) Graduation rate
+
+### Data Cleaning  
+
+An overview of the dataset is obtained using `summary()` and `str()`.  There is no missing data observed from the summary output. 
+```{r}
+summary(college)
+#------------------------------------------------------
+str(college)
+```
+
+Two incorrect records in the PhD and Grad.Rate variables are found. Both variables describe percentages, a value of over 100 is impossible. Hence, the observations with the error are removed.
+```{r echo=TRUE, results='hide'}
+#Cazenovia College with over 100% Grad.Rate, remove observation
+college[college$Grad.Rate> 100,]
+college <- college[college$Grad.Rate<=100,]
+
+#Texas A&M University at Galveston has over 100% PhD, remove observation
+college[college$PhD> 100,]
+college <- college[college$PhD<=100,]
+```
+
+No other errors are observed.  
+
+A correlation plot of the quantitative variables are plotted using `corrplot()` from the `corrplot` library. Dark blue or dark red indicates a high correlation between the corresponding variables. The correlation matrix plot here shows there are highly correlated variables in the dataset, such as Apps and Accept, this suggests that multicolinearity exists.
+```{r}
+cor <- cor(college[, which(names(college)!='Private')])
+corrplot(cor,method='circle')
+```
+
+The PhD and Terminal variables contain redundant information, the PhD variable is dropped. 
+```{r}
+college$PhD <- NULL
+```
+
+The highly correlated variables with an absolute correlation of 0.75 or higher is identified using `findCorrelation()` from the `car` library.
+```{r}
+#recalculate correlation matrix without PhD
+cor<- cor(college[, which(names(college)!='Private')])
+highlycorr<-findCorrelation(cor, cutoff=0.75)
+highlycorr<-names(college)[highlycorr+1]
+highlycorr
+```
+
+To analyze the distribution of each quantitative variables, a boxplot is plotted for each variable. Multiple variables are skewed, for example, Apps and Enroll are skewed to the right. The independent variable, Grad.Rate appears approximately normal. 
+```{r}
+par(mfcol = c(2, 3))
+for (ii in c(2:17)){
+  boxplot(x = college[,ii], xlab=names(college[ii]),
+          main=paste(names(college[ii]),'Boxplot', sep = ' '))
+}
+```
+
+Scatter plots of Grad.Rate and each numerical dependent variable are use to explore the relationship between them. Grad.Rate's relationship with variables such as Apps, Accept, and P.Undergrad are difficult to observe due to the skewness of those variables. A moderately linear relationship could be seen with Top10perc, Top25perc, Outstate, Room.Board, and perc.alumni.
+
+```{r} 
+quan.vars<- colnames(college)[-c(1,length(colnames(college)))]
+par(mfcol = c(2, 2))
+for (name in quan.vars){
+  plot(x = college[,name],y=college$Grad.Rate,xlab=name,
+       ylab='Grad.Rate', 
+       main=paste( 'Grad.Rate vs.',name, sep = ' '))  
+}
+```
+
+### Data Split
+Before building the model, the data is split into the training set, `college.train`, and the test set, `college.test`. Since the size of the dataset is adaquately large, a 50-50 split is employed here. 
+
+```{r}
+train_ind <- sample(seq_len(nrow(college)), 
+                    size=floor(0.5*nrow(college)))
+college.train <- college[train_ind,]
+college.test <- college[-train_ind,]
+
+```
+
+### Variable Selection  
+
+A multiple linear regression model including all the dependent variables is fitted using `lm()`, and its summary is shown below. The adjusted $R^2$ is relatively low, suggesting the model does not explain a lot of the variability in the data, and hence not a good fit. Note that $R^2$ is not a reliable measure here, as it tends to increase with the number of dependent variables included in the model.
+```{r}
+model <- lm(Grad.Rate~., data=college.train)
+summary(model)
+```
+
+Before the variable selection process, as discussed previously, there are highly correlated variables in the dataset. To test that formly, the variance inflation factor (VIF) is computed. A VIF greater 10 indicates significant multicolinearity. Apps, Accept, Enroll, and F.Undergrad all have a VIF above 10. This aligns with the result from the correlation matrix. Apps, Accept, Top10perc, and F.Undergrad are removed from the model.
+```{r}
+vif(model)
+#remove highly correlated variables
+college[,highlycorr]<-NULL
+college.train[,highlycorr]<-NULL
+```
+
+With the highly correlated variables removed, a multiple regression model is fitted as before.
+```{r}
+model <- lm(Grad.Rate~., data=college.train)
+summary(model)
+```
+
+For variable selection, two methods are explored here, stepwise selection and best subset.  
+
+The stepwise method with is used here to identify a subset of dependent variables for the model that minimizes the AIC. With `stepAIC()` from the `MASS` library, the function identifies a best model with 7 dependent variables using the default both-direction selection method, where the process starts with the backward selection method, add and remove new variables to the model, and evaluate the result.
+```{r}
+step <- stepAIC(model, trace=0, direction = 'both')
+step.vars <- names(step$coefficients)[-1]
+```
+
+A multiple regression model is fitted with the 7 variables identified. 
+```{r, echo=FALSE}
+model.1a<-lm(as.formula(paste('Grad.Rate~',paste(step.vars, collapse = '+'))), data=college.train)
+summary(model.1a)
+```
+
+### Model Assumptions Diagnostic and Remedial Measures
+There are 5 key model assumptions to check for a linear regression model:  
+
+- **Linearity** The relationship between the idependent and dependent variables is linear (Rainbox test)   
+- **Idependency of Error Term** There is no correlation in consecutive error terms (Durbin-Watson test)  
+- **Homoscedasticity** The variance of the error term is constant (Breusch-Pagan test, Brown-Forsythe test)  
+- **Normality of Error Term** The distribution of the error term is normal (Shapiro-Wilk test)  
+- **Normality of Independent Variable** The distribution of the independent variable is normal (Shapiro-Wilk test)  
+
+Graphical inspection can provide insights on any potential assumption violations, formal testing is required to confirm the diagnostic results. The formal tests used in this project are listed above in parentheses. 
+
+The residuals vs. fitted plot shows that the variance of error term seems to be higher in the middle, heteroscedasticity may exist (Note: residual and error term are used interchangably here). From the QQ plot of the residuals, the distribution of the residuals appears approximately normal. 
+```{r}
+par(mfrow=c(1,2))
+plot(model.1a, which=c(1,2))
+```
+
+The linear relationship between the independent variable and dependent variables can be inspected graphically with scatter plots, as shown in the EDA step. Enrollment and P.Undergradare are both right-skewed, transformation of the variable may be used as a remedial measure.
+
+
+For formal testing, the tests used for testing each model assumption are listed above. Many of these tests are available in the `lmtest` library. The `assumption_test()` function is written to output the test resutls for each test in a table format. 
+
+```{r echo=FALSE, warning=FALSE}
+assumption_test <- function(model){
+require(lmtest)
+#linearity
+model.rainbow<- lmtest::raintest(model)
+linear<-c(model.rainbow$statistic,model.rainbow$p.value)
+#normality
+model.norm<- shapiro.test(residuals(model))
+normality<-c(model.norm$statistic, model.norm$p.value)
+#homoscedasticity
+model.homosce<-lmtest::bptest(model)
+homosce<- c(model.homosce$statistic,model.homosce$p.value)
+#independence or error
+model.indep<-lmtest::dwtest(model)
+indep<- c(model.indep$statistic,model.indep$p.value)
+formula<-paste('Grad.Rate',paste(variable.names(model)[-1], collapse = ' + '),sep = '~')
+print(formula)
+assumption<- rbind(linear, normality, homosce, indep)
+assumption<-data.frame(assumption)
+colnames(assumption) <- c('Test Statistic','p-value')
+row.names(assumption) <- c('Rainbow', 'Shapiro-Wilk', 'Breusch-Pagan', 'Durbin-Watson')
+print(assumption)
+}
+```
+
+The normality of the error term assumption is tested through the Shapiro-Wilk test. The p-value of 0.00481 is statisically significant at $\alpha = 0.01$, and we reject the null hypothesis that the error term is normal. The test shows that the independent variable, Grad.Rate, is normally distributed.
+```{r, message=FALSE}
+assumption_test(model.1a)
+#normality check for independent variable
+shapiro.test(college.train$Grad.Rate)
+```
+
+The Breusch-Pagan test assumes that the model's error term is normal, which is not a case here. Hence, the Brown-Forsythe test is used to test for homoscedasticity instead. The `bf_group()` function is written to perform the test on each depedent variable in the model.
+```{r, echo=FALSE}
+bf_group <- function(model, data.set, var='Apps') {
+  n<-length(model$residuals)
+  data.set[['group']] <- as.list(rep(1, n))
+  med<- median(data.set[,var])
+  data.set$group[data.set[,var]<med]<-0
+  levene<-leveneTest(model$residuals~as.factor(unlist(data.set[['group']])))
+  return(c(var,round(levene$`F value`[1],4),
+           round(levene$`Pr(>F)`[1],4)))
+}
+```
+
+from the result of the Breusch-Pagan test, the p-values for Enroll and Top25perc are both less than $\alpha=0.01$, we reject the null hypothesis and conclude that the error terms are heteroscedastic with those two variables. 
+```{r, echo=FALSE} 
+print("Breush-Pagan Test")
+cat('Variable    Test-Stat       P-value','\n')
+for (var in step.vars) {
+  cat(paste(bf_group(model.1a, college.train, var), 
+              collapse = '       '), '\n')
+}
+```
+
+The key assumptions can also be tested using the `gvlma` library. The result aligns with what we have so far.
+```{r}
+gvlma::gvlma(model.1a, alphalevel = 0.01)
+```
+
+The non-normality and heteroscedasticity could possibly be by-products of the non-linear relationship in the Grad.Rate, Enroll, and P.Undergrad. Hence a transformance of Enroll and P.Undergrad are considered first.
+
+Transformation of a variable can be used as a rememdial measure for the homoscedasticity assumption violation. Transformation often fixes normality violation as well. Box-Cox transformation is used to indentify the optimal lambda value for the transformation based on max log-likelihood. The optimal lambda is found to be -0.2 and 0.1 for Enroll and P.Undergrad, respectively. A convenient lambda of 0 is used for both variables, i.e. a log transformation.  
+
+A regression model with the transformed variables is fitted.
+
+```{r, echo=FALSE} 
+enroll.bc <- boxCox(lm(Enroll~Grad.Rate,
+                       data=college.train),plotit = FALSE)
+enroll.lambda<-enroll.bc$x[enroll.bc$y==max(enroll.bc$y)][1]
+P.Undergrad.bc <- boxCox(lm(P.Undergrad+1~Grad.Rate,
+                            data=college.train), plotit = FALSE)
+P.Undergrad.lambda<-P.Undergrad.bc$x[P.Undergrad.bc$y==max(P.Undergrad.bc$y)][1]
+
+college.train$tEnroll <- log(college.train$Enroll)
+college.train$tP.Undergrad <- log(college.train$P.Undergrad)
+
+t.vars <- step.vars[!step.vars %in% c("Enroll", "P.Undergrad")]
+t.vars <- append(t.vars, c("tEnroll", "tP.Undergrad"))
+```
+
+```{r}
+model.1b <- lm(as.formula(paste("Grad.Rate~", 
+                                paste(t.vars, collapse = "+"))),
+               data=college.train)
+summary(model.1b)
+assumption_test(model.1b)
+par(mfrow=c(1,2))
+plot(model.1b, which = c(1,2))
+```
+
+However, with the transformed variables, heteroscedasticity still presents. Based on [Gauss-Markov Theorem](https://en.wikipedia.org/wiki/Gauss%E2%80%93Markov_theorem), the model will still work, though the estimators are no longer BLUE (Best Linear, Unbiased Estimator). 
+
+### Model Validation
+
+With the regression model fitted above, graduation rates are predicted using the test set. Prediction errors are then calculated using the `forecast` library. The first output, ME (mean error), is the average of the errors, though it does not provide information on the magnitude of the errors.The RMSE (root-mean-squared error) is, on the other hand, more informative. The model RMSE and the prediction RMSE are relatively close, indicating the model is not overfitting. 
+``` {r, echo=FALSE}
+college.test$tEnroll <-log(college.test$Enroll)
+college.test$tP.Undergrad <- log(college.test$P.Undergrad)
+print("-------Model Evaluation--------")
+accuracy(model.1b$fitted.values,college.train$Grad.Rate)
+pred <- predict(model.1b, college.test)
+print("-------Prediction Evaluation--------")
+accuracy(pred, college.test$Grad.Rate)
+```
+
+The low adjusted $R^2$ from the model indicates the model does not explain a majority of the variability in the data. Introducing additional varibles and different modeling methods can be investigated for a more accurate model. 
