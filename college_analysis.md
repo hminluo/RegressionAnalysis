@@ -1,6 +1,8 @@
 Regression Analysis on College Graduation Rate
 ----------------------------------------------
 
+Project Contributors: [Dan Gluck](https://github.com/Terragoth), [Annie Lott](https://github.com/akl21), [Min Luo](https://github.com/hminluo), [Reisa Widjaja](https://github.com/reisaw)
+
 ### Introduction
 
 For this project, the US News and World Reports College Data from the StatLib library dataset is analyzed. Multiple regression models with the graduation rate as the dependent variable were fitted. Using stepwise selection, variables for the model were selected from the 17 predictor variables in the dataset, such as number of full-time students, and out-of-state tuition. By analysing the relationships between the dependent and independent variables, graduation rate of a university can be predicted based on the model fitted.
