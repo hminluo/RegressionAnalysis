@@ -46,7 +46,7 @@ plot_missing(college.missing)
 
 <img src="college_EDA_files/figure-markdown_github/unnamed-chunk-6-1.png" width="672" />
 
-While these one-line functions can save a lot of time in EDA. The most powerful function in the library is the `create_report()` function. The default report, which can be called by using `create_report(college)`, contains output from functions like `plot_str()`, `plot_histogram()`, and other useful graphical analyses techniques. Additional plots with different options can be generated as shown below.
+While these one-line functions can save a lot of time in EDA. The most powerful function in the library is the `create_report()` function. The default report, which can be called by using `create_report(college)`, contains output from functions like `plot_str()`, `plot_histogram()`, and other useful graphical analyses techniques. Additional plots with different options can be generated as shown below (see the [report](https://github.com/hminluo/RegressionAnalysis/blob/master/college_EDA_report.pdf) generated).
 
 ``` r
 test<-create_report(data = college, y='Grad.Rate',
